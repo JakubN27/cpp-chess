@@ -3,6 +3,16 @@
 #include "../include/piece.h"
 #include <iostream>
 #include <cmath>
+#include <stdexcept>
+
+static Position find_king(const Board& b, Piece king) {
+    for (int r = 0; r < 8; ++r) {
+        for (int c = 0; c < 8; ++c) {
+            if (b[r][c] == king) return Position{r, c};
+        }
+    }
+    throw std::runtime_error("King not found on board");
+}
 
 // GameState Constructor
 GameState::GameState() {
@@ -10,6 +20,32 @@ GameState::GameState() {
     white_to_move = true;
     white_king_pos = Position{7, 4};  // e1
     black_king_pos = Position{0, 4};  // e8
+}
+
+// Custom boards, mostly for testing 
+GameState::GameState(const Board& custom_board) {
+    board = custom_board;
+    white_to_move = true;
+
+    // One-time scan to initialize cached king positions.
+    white_king_pos = find_king(board, WHITEKING);
+    black_king_pos = find_king(board, BLACKKING);
+}
+
+GameState::GameState(const Board& custom_board, Position whiteKingPos, Position blackKingPos, bool whiteToMove) {
+    board = custom_board;
+    white_to_move = whiteToMove;
+    white_king_pos = whiteKingPos;
+    black_king_pos = blackKingPos;
+}
+
+void GameState::update_cached_king_pos_after_move(const Move& move) {
+    Piece moved = board[move.end_row][move.end_col];
+    if (moved == WHITEKING) {
+        white_king_pos = Position{move.end_row, move.end_col};
+    } else if (moved == BLACKKING) {
+        black_king_pos = Position{move.end_row, move.end_col};
+    }
 }
 
 void GameState::print_board() {
@@ -22,9 +58,14 @@ void GameState::print_board() {
 }
 
 bool GameState::make_move(const Move& move) {
-    std::cout << "moving" << std::endl;
+    // NOTE: Keep this function fast; avoid any I/O here (engine will call it a lot).
+
     board[move.end_row][move.end_col] = board[move.start_row][move.start_col];
     board[move.start_row][move.start_col] = EMPTY;
+
+    update_cached_king_pos_after_move(move);
+    white_to_move = !white_to_move;
+
     return true;
 }
 
@@ -33,7 +74,6 @@ bool GameState::validate_move(const Move& move) {
         move.start_col < 0 || move.start_col >= 8 ||
         move.end_row   < 0 || move.end_row   >= 8 ||
         move.end_col   < 0 || move.end_col   >= 8) {
-        std::cout << "ERROR: Move out of bounds\n";
         return false;
     }
 

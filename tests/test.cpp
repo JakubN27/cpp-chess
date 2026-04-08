@@ -1,107 +1,126 @@
-#include "../include/board.h"
+#include "../include/gamestate.h"
+#include "../include/types.h"
 #include <cassert>
 #include <iostream>
 
+static Board empty_board_with_kings() {
+    Board b{};
+    for (auto &row : b) row.fill(EMPTY);
+    b[7][4] = WHITEKING;
+    b[0][4] = BLACKKING;
+    return b;
+}
+
 void test_all_piece_moves() {
     {
-        Board board{};
-        board[6][4] = WHITEPAWN;
+        Board b = empty_board_with_kings();
+        b[6][4] = WHITEPAWN;
+        GameState gs(b);
 
-        assert(validate_move_helper({6, 5, 4, 4}, board) == true);
-        assert(validate_move_helper({6, 4, 4, 4}, board) == true);
-        assert(validate_move_helper({6, 3, 4, 4}, board) == false);
-        assert(validate_move_helper({6, 5, 4, 5}, board) == false);
-        assert(validate_move_helper({6, 7, 4, 4}, board) == false);
+        assert(gs.validate_move({6, 5, 4, 4}) == true);
+        assert(gs.validate_move({6, 4, 4, 4}) == true);
+        assert(gs.validate_move({6, 3, 4, 4}) == false);
+        assert(gs.validate_move({6, 5, 4, 5}) == false);
+        assert(gs.validate_move({6, 7, 4, 4}) == false);
     }
 
     {
-        Board board{};
-        board[1][4] = BLACKPAWN;
+        Board b = empty_board_with_kings();
+        b[1][4] = BLACKPAWN;
+        GameState gs(b);
 
-        assert(validate_move_helper({1, 2, 4, 4}, board) == true);
-        assert(validate_move_helper({1, 3, 4, 4}, board) == true);
-        assert(validate_move_helper({1, 4, 4, 4}, board) == false);
-        assert(validate_move_helper({1, 2, 4, 5}, board) == false);
-        assert(validate_move_helper({1, 0, 4, 4}, board) == false);
+        assert(gs.validate_move({1, 2, 4, 4}) == true);
+        assert(gs.validate_move({1, 3, 4, 4}) == true);
+        assert(gs.validate_move({1, 4, 4, 4}) == false);
+        assert(gs.validate_move({1, 2, 4, 5}) == false);
+        assert(gs.validate_move({1, 0, 4, 4}) == false);
     }
 
     {
-        Board board{};
-        board[4][4] = WHITEKNIGHT;
+        Board b = empty_board_with_kings();
+        b[4][4] = WHITEKNIGHT;
+        GameState gs(b);
 
-        assert(validate_move_helper({4, 6, 4, 5}, board) == true);
-        assert(validate_move_helper({4, 5, 4, 6}, board) == true);
-        assert(validate_move_helper({4, 2, 4, 3}, board) == true);
-        assert(validate_move_helper({4, 3, 4, 2}, board) == true);
-        assert(validate_move_helper({4, 5, 4, 5}, board) == false);
-        assert(validate_move_helper({4, 4, 4, 6}, board) == false);
+        assert(gs.validate_move({4, 6, 4, 5}) == true);
+        assert(gs.validate_move({4, 5, 4, 6}) == true);
+        assert(gs.validate_move({4, 2, 4, 3}) == true);
+        assert(gs.validate_move({4, 3, 4, 2}) == true);
+        assert(gs.validate_move({4, 5, 4, 5}) == false);
+        assert(gs.validate_move({4, 4, 4, 6}) == false);
     }
 
     {
-        Board board{};
-        board[4][4] = WHITEBISHOP;
+        Board b = empty_board_with_kings();
+        b[4][4] = WHITEBISHOP;
+        GameState gs(b);
 
-        assert(validate_move_helper({4, 6, 4, 6}, board) == true);
-        assert(validate_move_helper({4, 2, 4, 2}, board) == true);
-        assert(validate_move_helper({4, 4, 4, 7}, board) == false);
-        assert(validate_move_helper({4, 5, 4, 6}, board) == false);
+        assert(gs.validate_move({4, 6, 4, 6}) == true);
+        assert(gs.validate_move({4, 2, 4, 2}) == true);
+        assert(gs.validate_move({4, 4, 4, 7}) == false);
+        assert(gs.validate_move({4, 5, 4, 6}) == false);
     }
 
     {
-        Board board{};
-        board[4][4] = WHITEBISHOP;
-        board[5][5] = WHITEPAWN;
+        Board b = empty_board_with_kings();
+        b[4][4] = WHITEBISHOP;
+        b[5][5] = WHITEPAWN;
+        GameState gs(b);
 
-        assert(validate_move_helper({4, 6, 4, 6}, board) == false);
+        assert(gs.validate_move({4, 6, 4, 6}) == false);
     }
 
     {
-        Board board{};
-        board[4][4] = WHITEROOK;
+        Board b = empty_board_with_kings();
+        b[4][4] = WHITEROOK;
+        GameState gs(b);
 
-        assert(validate_move_helper({4, 7, 4, 4}, board) == true);
-        assert(validate_move_helper({4, 1, 4, 4}, board) == true);
-        assert(validate_move_helper({4, 4, 4, 0}, board) == true);
-        assert(validate_move_helper({4, 6, 4, 6}, board) == false);
+        assert(gs.validate_move({4, 7, 4, 4}) == true);
+        assert(gs.validate_move({4, 1, 4, 4}) == true);
+        assert(gs.validate_move({4, 4, 4, 0}) == true);
+        assert(gs.validate_move({4, 6, 4, 6}) == false);
     }
 
     {
-        Board board{};
-        board[4][4] = WHITEROOK;
-        board[4][6] = WHITEPAWN;
+        Board b = empty_board_with_kings();
+        b[4][4] = WHITEROOK;
+        b[4][6] = WHITEPAWN;
+        GameState gs(b);
 
-        assert(validate_move_helper({4, 4, 4, 7}, board) == false);
+        assert(gs.validate_move({4, 4, 4, 7}) == false);
     }
 
     {
-        Board board{};
-        board[4][4] = WHITEQUEEN;
+        Board b = empty_board_with_kings();
+        b[4][4] = WHITEQUEEN;
+        GameState gs(b);
 
-        assert(validate_move_helper({4, 7, 4, 4}, board) == true);
-        assert(validate_move_helper({4, 1, 4, 1}, board) == true);
-        assert(validate_move_helper({4, 6, 4, 5}, board) == false);
+        assert(gs.validate_move({4, 7, 4, 4}) == true);
+        assert(gs.validate_move({4, 1, 4, 1}) == true);
+        assert(gs.validate_move({4, 6, 4, 5}) == false);
     }
 
     {
-        Board board{};
-        board[4][4] = WHITEQUEEN;
-        board[5][5] = WHITEPAWN;
-        board[4][2] = WHITEPAWN;
+        Board b = empty_board_with_kings();
+        b[4][4] = WHITEQUEEN;
+        b[5][5] = WHITEPAWN;
+        b[4][2] = WHITEPAWN;
+        GameState gs(b);
 
-        assert(validate_move_helper({4, 7, 4, 7}, board) == false);
-        assert(validate_move_helper({4, 4, 4, 0}, board) == false);
+        assert(gs.validate_move({4, 7, 4, 7}) == false);
+        assert(gs.validate_move({4, 4, 4, 0}) == false);
     }
 
     {
-        Board board{};
-        board[4][4] = WHITEKING;
+        Board b = empty_board_with_kings();
+        b[4][4] = WHITEKING;
+        GameState gs(b);
 
-        assert(validate_move_helper({4, 5, 4, 4}, board) == true);
-        assert(validate_move_helper({4, 3, 4, 4}, board) == true);
-        assert(validate_move_helper({4, 4, 4, 5}, board) == true);
-        assert(validate_move_helper({4, 5, 4, 5}, board) == true);
-        assert(validate_move_helper({4, 6, 4, 4}, board) == false);
-        assert(validate_move_helper({4, 4, 4, 6}, board) == false);
+        assert(gs.validate_move({4, 5, 4, 4}) == true);
+        assert(gs.validate_move({4, 3, 4, 4}) == true);
+        assert(gs.validate_move({4, 4, 4, 5}) == true);
+        assert(gs.validate_move({4, 5, 4, 5}) == true);
+        assert(gs.validate_move({4, 6, 4, 4}) == false);
+        assert(gs.validate_move({4, 4, 4, 6}) == false);
     }
 
     std::cout << "All regular piece movement tests passed.\n";

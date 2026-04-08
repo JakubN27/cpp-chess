@@ -9,10 +9,19 @@ private:
     bool white_to_move;
     Position white_king_pos;
     Position black_king_pos;
-    
+
+    void update_cached_king_pos_after_move(const Move& move);
+
 public:
     // Constructor
     GameState();
+
+    // Utility/test: construct from a custom board.
+    // NOTE: This will scan the board once to locate kings and initialize caches.
+    explicit GameState(const Board& custom_board);
+
+    // Utility/test: construct from a custom board with explicit king caches.
+    GameState(const Board& custom_board, Position whiteKingPos, Position blackKingPos, bool whiteToMove = true);
     
     // Core gameplay functions
     bool validate_move(const Move& move);
