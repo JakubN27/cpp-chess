@@ -74,9 +74,9 @@ void test_all_piece_moves() {
         b[4][4] = WHITEROOK;
         GameState gs(b);
 
-        assert(gs.validate_move({4, 7, 4, 4}) == true);
-        assert(gs.validate_move({4, 1, 4, 4}) == true);
-        assert(gs.validate_move({4, 4, 4, 0}) == true);
+        assert(gs.validate_move({4, 4, 4, 7}) == true);
+        assert(gs.validate_move({4, 4, 4, 1}) == true);
+        assert(gs.validate_move({4, 0, 4, 4}) == true);
         assert(gs.validate_move({4, 6, 4, 6}) == false);
     }
 
@@ -94,7 +94,7 @@ void test_all_piece_moves() {
         b[4][4] = WHITEQUEEN;
         GameState gs(b);
 
-        assert(gs.validate_move({4, 7, 4, 4}) == true);
+        assert(gs.validate_move({4, 4, 4, 7}) == true);
         assert(gs.validate_move({4, 1, 4, 1}) == true);
         assert(gs.validate_move({4, 6, 4, 5}) == false);
     }
