@@ -60,7 +60,9 @@ int main(int argc, char** argv) {
             std::cout << "No legal moves.\n";
             break;
         }
-
+        
+        int eval = evaluate_position(gs);
+        std::cout << "Bot evluation : " << eval;
         print_board_ascii(gs);
 
         bool bot_to_move = (gs.is_white_to_move() && cfg.white_bot) || (!gs.is_white_to_move() && cfg.black_bot);
