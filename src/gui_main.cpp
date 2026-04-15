@@ -1,8 +1,11 @@
 #include <SFML/Graphics.hpp>
 #include "../include/gamestate.h"
 #include "../include/piece.h"
+#include "../include/bot.h"
+#include "../include/cli.h"
 #include <iostream>
 #include <vector>
+#include <string>
 
 static bool square_in_list(int row, int col, const std::vector<Move>& moves, int start_row, int start_col){
     for (const auto& m : moves){
@@ -14,7 +17,26 @@ static bool square_in_list(int row, int col, const std::vector<Move>& moves, int
     return false;
 }
 
-int main() {
+static std::string game_status_text(GameState& gs){
+    if (gs.is_checkmate()){
+        return gs.is_white_to_move() ? "Checkmate - Black wins" : "Checkmate - White wins";
+    }
+    if (gs.is_stalemate()){
+        return "Stalemate - Draw";
+    }
+    if (gs.is_draw_threefold_repetition()){
+        return "Draw - Threefold repetition";
+    }
+    if (gs.is_draw_fifty_move_rule()){
+        return "Draw - 50-move rule";
+    }
+    if (gs.is_draw_insufficient_material()){
+        return "Draw - Insufficient material";
+    }
+    return "";
+}
+
+int main(int argc, char** argv) {
     const unsigned int tileSize = 80;
     const unsigned int boardSize = 8;
     const unsigned int winSize = tileSize * boardSize;
@@ -40,10 +62,30 @@ int main() {
     int selected_row = -1;
     int selected_col = -1;
 
+    BotConfig cfg = parse_bot_config(argc, argv);
+    bool white_bot = cfg.white_bot;
+    bool black_bot = cfg.black_bot;
+
     std::vector<Move> legal_moves;
     gs.generate_legal_moves(legal_moves);
 
     while (window.isOpen()) {
+        std::string status_pre = game_status_text(gs);
+        if (status_pre.empty()){
+            bool bot_to_move = (gs.is_white_to_move() && white_bot) || (!gs.is_white_to_move() && black_bot);
+            if (bot_to_move){
+                gs.generate_legal_moves(legal_moves);
+                if (!legal_moves.empty()){
+                    Move bm = choose_bot_move(gs, legal_moves);
+                    gs.make_move(bm);
+                    gs.generate_legal_moves(legal_moves);
+                    has_selection = false;
+                    selected_row = -1;
+                    selected_col = -1;
+                }
+            }
+        }
+
         while (auto event = window.pollEvent()) {
             if (event->is<sf::Event::Closed>()) {
                 window.close();
@@ -58,6 +100,17 @@ int main() {
                     // Only accept clicks inside the board area.
                     if (world.x < 0.f || world.y < 0.f ||
                         world.x >= (float)winSize || world.y >= (float)winSize){
+                        continue;
+                    }
+
+                    // Stop accepting moves when the game has ended.
+                    if (!game_status_text(gs).empty()){
+                        continue;
+                    }
+
+                    // Disable clicks if it's currently a bot-controlled side.
+                    bool bot_to_move = (gs.is_white_to_move() && white_bot) || (!gs.is_white_to_move() && black_bot);
+                    if (bot_to_move){
                         continue;
                     }
 
@@ -156,6 +209,26 @@ int main() {
 
                 window.draw(text);
             }
+        }
+
+        std::string status = game_status_text(gs);
+        if (!status.empty()){
+            sf::RectangleShape overlay(sf::Vector2f((float)winSize, (float)winSize));
+            overlay.setPosition(sf::Vector2f(0.f, 0.f));
+            overlay.setFillColor(sf::Color(0, 0, 0, 140));
+            window.draw(overlay);
+
+            sf::Text text(font);
+            text.setString(status);
+            text.setCharacterSize(34);
+            text.setFillColor(sf::Color::White);
+
+            sf::FloatRect bounds = text.getLocalBounds();
+            text.setOrigin(sf::Vector2f(bounds.position.x + bounds.size.x / 2.f,
+                                       bounds.position.y + bounds.size.y / 2.f));
+            text.setPosition(sf::Vector2f((float)winSize / 2.f, (float)winSize / 2.f));
+
+            window.draw(text);
         }
 
         window.display();

@@ -19,11 +19,11 @@ BUILD_DIR = build
 BIN_DIR = bin
 
 # Source files
-SOURCES = $(SRC_DIR)/main.cpp $(SRC_DIR)/gamestate.cpp $(SRC_DIR)/board.cpp $(SRC_DIR)/piece.cpp $(TEST_DIR)/test.cpp
+SOURCES = $(SRC_DIR)/main.cpp $(SRC_DIR)/gamestate.cpp $(SRC_DIR)/board.cpp $(SRC_DIR)/piece.cpp $(SRC_DIR)/bot.cpp $(SRC_DIR)/cli.cpp $(SRC_DIR)/algebraic.cpp $(TEST_DIR)/test.cpp
 OBJECTS = $(SOURCES:%.cpp=$(BUILD_DIR)/%.o)
 
 # GUI source files
-GUI_SOURCES = $(SRC_DIR)/gui_main.cpp $(SRC_DIR)/gamestate.cpp $(SRC_DIR)/board.cpp $(SRC_DIR)/piece.cpp
+GUI_SOURCES = $(SRC_DIR)/gui_main.cpp $(SRC_DIR)/gamestate.cpp $(SRC_DIR)/board.cpp $(SRC_DIR)/piece.cpp $(SRC_DIR)/bot.cpp $(SRC_DIR)/cli.cpp $(SRC_DIR)/algebraic.cpp
 GUI_OBJECTS = $(GUI_SOURCES:%.cpp=$(BUILD_DIR)/%.o)
 GUI_TARGET = $(BIN_DIR)/gui
 

@@ -70,6 +70,9 @@ public:
     int get_halfmove_clock() const { return halfmove_clock; }
     int get_fullmove_number() const { return fullmove_number; }
     uint64_t get_hash() const { return hash; }
+
+    Position get_white_king_pos() const { return white_king_pos; }
+    Position get_black_king_pos() const { return black_king_pos; }
 };
 
 #endif
