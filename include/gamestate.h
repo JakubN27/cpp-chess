@@ -3,6 +3,7 @@
 
 #include "types.h"
 #include <vector>
+#include <cstdint>
 
 class GameState {
 private:
@@ -18,7 +19,12 @@ private:
     int halfmove_clock;
     int fullmove_number;
 
+    // Repetition / hashing
+    uint64_t hash;
+    std::vector<uint64_t> position_hashes;
+
     void update_king(const Move& move);
+    uint64_t compute_hash() const;
 
 public:
     // Constructor
@@ -53,6 +59,8 @@ public:
     bool is_checkmate();
     bool is_stalemate();
     bool is_draw_insufficient_material() const;
+    bool is_draw_fifty_move_rule() const;
+    bool is_draw_threefold_repetition() const;
 
     // GUI/debug access
     const Board& get_board() const { return board; }
@@ -61,6 +69,7 @@ public:
     Position get_en_passant() const { return en_passant; }
     int get_halfmove_clock() const { return halfmove_clock; }
     int get_fullmove_number() const { return fullmove_number; }
+    uint64_t get_hash() const { return hash; }
 };
 
 #endif

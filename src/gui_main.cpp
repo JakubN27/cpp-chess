@@ -30,7 +30,6 @@ int main() {
 
     GameState gs;
 
-    // You can bundle a font in `assets/` instead; this uses a macOS system font path.
     sf::Font font;
     if (!font.openFromFile("/System/Library/Fonts/Supplemental/Arial.ttf")) {
         std::cerr << "Failed to load font: /System/Library/Fonts/Supplemental/Arial.ttf\n";

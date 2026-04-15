@@ -56,6 +56,8 @@ struct Undo {
     uint8_t prev_castling_rights;
     Position prev_en_passant; // {-1,-1} means none
     int prev_halfmove_clock;
+
+    uint64_t prev_hash = 0;
 };
 
 #endif

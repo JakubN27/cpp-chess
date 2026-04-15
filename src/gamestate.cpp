@@ -5,6 +5,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <array>
+#include <cstdint>
 
 static Position find_king(const Board& b, Piece king) {
     for (int r = 0; r < 8; ++r) {
@@ -26,6 +27,10 @@ GameState::GameState() {
     en_passant = Position{-1, -1};
     halfmove_clock = 0;
     fullmove_number = 1;
+
+    hash = compute_hash();
+    position_hashes.clear();
+    position_hashes.push_back(hash);
 }
 
 // Custom boards, mostly for testing 
@@ -40,6 +45,10 @@ GameState::GameState(const Board& custom_board) {
     en_passant = Position{-1, -1};
     halfmove_clock = 0;
     fullmove_number = 1;
+
+    hash = compute_hash();
+    position_hashes.clear();
+    position_hashes.push_back(hash);
 }
 
 GameState::GameState(const Board& custom_board, Position whiteKingPos, Position blackKingPos, bool whiteToMove) {
@@ -52,6 +61,10 @@ GameState::GameState(const Board& custom_board, Position whiteKingPos, Position 
     en_passant = Position{-1, -1};
     halfmove_clock = 0;
     fullmove_number = 1;
+
+    hash = compute_hash();
+    position_hashes.clear();
+    position_hashes.push_back(hash);
 }
 
 void GameState::update_king(const Move& move) {
@@ -80,6 +93,7 @@ Undo GameState::make_move(const Move& move) {
     undo.prev_castling_rights = castling_rights;
     undo.prev_en_passant = en_passant;
     undo.prev_halfmove_clock = halfmove_clock;
+    undo.prev_hash = hash;
 
     // reset en-passant by default
     en_passant = Position{-1, -1};
@@ -183,6 +197,10 @@ Undo GameState::make_move(const Move& move) {
     }
 
     history.push_back(undo);
+
+    hash = compute_hash();
+    position_hashes.push_back(hash);
+
     return undo;
 }
 
@@ -242,6 +260,12 @@ void GameState::undo_move(const Move& move, const Undo& undo) {
     }
     else if (undo.moved_piece == BLACKKING){
         black_king_pos = Position{move.start_row, move.start_col};
+    }
+
+    // restore hash and repetition stack
+    hash = undo.prev_hash;
+    if (!position_hashes.empty()) {
+        position_hashes.pop_back();
     }
 
     if (!history.empty()){
@@ -927,6 +951,71 @@ void GameState::generate_legal_moves(std::vector<Move>& moves) {
             moves.push_back(m);
         }
     }
+}
+
+namespace {
+    constexpr int BOARD_SIZE = 8;
+    constexpr int MAX_HALF_MOVES_FOR_FIFTY_MOVE_RULE = 100;
+
+    // splitmix64 constants (public-domain mixer)
+    constexpr uint64_t SM64_GAMMA = 0x9e3779b97f4a7c15ULL;
+    constexpr uint64_t SM64_MUL1  = 0xbf58476d1ce4e5b9ULL;
+    constexpr uint64_t SM64_MUL2  = 0x94d049bb133111ebULL;
+
+    // position-hash domain separators
+    constexpr uint64_t HASH_PIECE_SEED   = 0xA5A5A5A5A5A5A5A5ULL;
+    constexpr uint64_t HASH_WHITE_TO_MOVE = 0xABCDEF01ULL;
+    constexpr uint64_t HASH_BLACK_TO_MOVE = 0x10FEDCBAULL;
+    constexpr uint64_t HASH_CASTLING_SEED = 0xC0FFEEULL;
+    constexpr uint64_t HASH_EPFILE_SEED   = 0xE11EULL;
+}
+
+static inline uint64_t splitmix64(uint64_t x) {
+    x += SM64_GAMMA;
+    x = (x ^ (x >> 30)) * SM64_MUL1;
+    x = (x ^ (x >> 27)) * SM64_MUL2;
+    return x ^ (x >> 31);
+}
+
+uint64_t GameState::compute_hash() const {
+    uint64_t h = 0;
+
+    // board
+    for (int r = 0; r < BOARD_SIZE; ++r) {
+        for (int c = 0; c < BOARD_SIZE; ++c) {
+            Piece p = board[r][c];
+            if (p == EMPTY) continue;
+            uint64_t key = (uint64_t)p;
+            uint64_t sq = (uint64_t)(r * BOARD_SIZE + c);
+            h ^= splitmix64((key << 6) ^ sq ^ HASH_PIECE_SEED);
+        }
+    }
+
+    // side to move
+    h ^= splitmix64(white_to_move ? HASH_WHITE_TO_MOVE : HASH_BLACK_TO_MOVE);
+
+    // castling rights
+    h ^= splitmix64(HASH_CASTLING_SEED ^ (uint64_t)castling_rights);
+
+    // en-passant file (only file matters for repetition)
+    if (en_passant.row != -1) {
+        h ^= splitmix64(HASH_EPFILE_SEED ^ (uint64_t)en_passant.col);
+    }
+
+    return h;
+}
+
+bool GameState::is_draw_fifty_move_rule() const {
+    return halfmove_clock >= MAX_HALF_MOVES_FOR_FIFTY_MOVE_RULE;
+}
+
+bool GameState::is_draw_threefold_repetition() const {
+    uint64_t cur = hash;
+    int count = 0;
+    for (uint64_t h : position_hashes) {
+        if (h == cur) count++;
+    }
+    return count >= 3;
 }
 
 
