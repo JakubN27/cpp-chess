@@ -34,7 +34,7 @@ Move choose_bot_move(GameState& gs, const std::vector<Move>& legal_moves) {
     for (const Move& m : legal_moves) {
         Undo u = gs.make_move(m);
         // After we make a move, it's the opponent's turn, so the node colour flips.
-        const int score = -negamax(gs, 3, -root_colour);
+        const int score = -negamax(gs, 3, -root_colour, INT_MIN, INT_MAX);
         gs.undo_move(m, u);
 
         if (score > best_score) {
@@ -60,7 +60,11 @@ int evaluate_position(const GameState& gs) {
 
 //negamax returns an int, but we will decide which move to make 
 // by running it to evaluate all immediate possible moves
-int negamax(GameState& gs, int depth, int colour) {
+
+//Alpha beta pruning, keep track of our best (alpha) and opponents best (beta)
+//Prune branch if position better than beta (assume opponent makes best move)
+//Or if worse than alpha (pointless). We swap and negate them between iterations for negamaxos 
+int negamax(GameState& gs, int depth, int colour, int alpha, int beta) {
     std::vector<Move> move_list;
     gs.generate_legal_moves(move_list);
 
@@ -68,12 +72,17 @@ int negamax(GameState& gs, int depth, int colour) {
         return colour * evaluate_position(gs);
     }
 
-    int max_value = std::numeric_limits<int>::min();
+    int max_value = INT_MIN;
     for (const Move& m : move_list) {
         Undo u = gs.make_move(m);
-        const int value = -negamax(gs, depth - 1, -colour);
+        const int value = -negamax(gs, depth - 1, -colour, -beta, -alpha);
         gs.undo_move(m, u);
+
         max_value = std::max(max_value, value);
+        alpha = std::max(alpha, value);
+        if (alpha >= beta){
+            break;
+        }
     }
 
     return max_value;
