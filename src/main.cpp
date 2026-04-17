@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
             break;
         }
         
-        int eval = evaluate_position(gs);
+        int eval = evaluate_material(gs);
         std::cout << "Bot evluation : " << eval;
         print_board_ascii(gs);
 

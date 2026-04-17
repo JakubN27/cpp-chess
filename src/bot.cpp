@@ -1,10 +1,18 @@
 #include "../include/bot.h"
 #include "../include/gamestate.h"
+#include "../include/algebraic.h"
+#include "../include/piece.h"
 #include <stdexcept>
 #include <array>
-#include <limits>
+#include <algorithm>
+#include <cstdlib>
+#include <iostream>
 
-// Material values indexed by `Piece` enum values (see `include/types.h`).
+// global counters for logging
+int g_nodes_visited = 0;
+int g_prunes = 0;
+
+// material values indexed by `Piece` enum values (see `include/types.h`)
 static constexpr std::array<int, 13> kMaterial = {
     /* 0  EMPTY */ 0,
     /* 1  WHITEPAWN */ 100,
@@ -21,7 +29,40 @@ static constexpr std::array<int, 13> kMaterial = {
     /* 12 BLACKKING */ -999
 };
 
-Move choose_bot_move(GameState& gs, const std::vector<Move>& legal_moves) {
+static constexpr int INF = 1000000;
+
+static int piece_value_abs(Piece p) {
+    return std::abs(kMaterial[static_cast<size_t>(p)]);
+}
+
+static int move_priority_score(const GameState& gs, const Move& m) {
+    const Board& b = gs.get_board();
+    const Piece mover = b[m.start_row][m.start_col];
+
+    Piece captured = b[m.end_row][m.end_col];
+    if ((m.flags & MOVE_EN_PASSANT) != 0) {
+        captured = is_white(mover) ? BLACKPAWN : WHITEPAWN;
+    }
+
+    int score = 0;
+
+    // captures first
+    if (captured != EMPTY) {
+        score += 10000 + (10 * piece_value_abs(captured)) - piece_value_abs(mover);
+    }
+
+    // promotions next
+    if ((m.flags & MOVE_PROMOTION) != 0) {
+        score += 8000 + piece_value_abs(m.promotion);
+    }
+
+    return score;
+}
+
+Move choose_bot_move(GameState& gs, std::vector<Move>& legal_moves) {
+    g_nodes_visited = 0;
+    g_prunes = 0;
+    order_moves(gs, legal_moves);
     if (legal_moves.empty()) {
         throw std::runtime_error("No legal moves");
     }
@@ -29,24 +70,42 @@ Move choose_bot_move(GameState& gs, const std::vector<Move>& legal_moves) {
     const int root_colour = gs.is_white_to_move() ? 1 : -1;
 
     Move best_move = legal_moves.front();
-    int best_score = INT_MIN;
+    int best_score = -INF;
+    int alpha = -INF;
+    std::vector<int> root_scores;
+    root_scores.reserve(legal_moves.size());
 
     for (const Move& m : legal_moves) {
         Undo u = gs.make_move(m);
-        // After we make a move, it's the opponent's turn, so the node colour flips.
-        const int score = -negamax(gs, 3, -root_colour, INT_MIN, INT_MAX);
+        const int score = -negamax(gs, 5, -root_colour, -INF, -alpha);
         gs.undo_move(m, u);
+        root_scores.push_back(score);
 
         if (score > best_score) {
             best_score = score;
             best_move = m;
         }
+        alpha = std::max(alpha, score);
     }
-
+    std::cout << "Nodes visited: " << g_nodes_visited << ", Prunes: " << g_prunes << std::endl;
+    // Print root move order and scores
+    std::cout << "Root move order and scores (" << (gs.is_white_to_move() ? "White" : "Black") << " to move):\n";
+    for (size_t i = 0; i < legal_moves.size(); ++i) {
+        const Move& m = legal_moves[i];
+        std::string san = move_to_san(gs, m);
+        std::cout << "  " << san << " | Score: " << root_scores[i] << std::endl;
+    }
     return best_move;
 }
 
-int evaluate_position(const GameState& gs) {
+void order_moves(GameState& gs, std::vector<Move>& moves){
+    std::sort(moves.begin(), moves.end(), [&](const Move& a, const Move& b) {
+        return move_priority_score(gs, a) > move_priority_score(gs, b);
+    });
+}
+
+
+int evaluate_material(const GameState& gs) {
     int score = 0;
     const Board& b = gs.get_board();
 
@@ -65,22 +124,26 @@ int evaluate_position(const GameState& gs) {
 //Prune branch if position better than beta (assume opponent makes best move)
 //Or if worse than alpha (pointless). We swap and negate them between iterations for negamaxos 
 int negamax(GameState& gs, int depth, int colour, int alpha, int beta) {
+    ++g_nodes_visited;
     std::vector<Move> move_list;
     gs.generate_legal_moves(move_list);
+    order_moves(gs, move_list);
 
     if (depth == 0 || move_list.empty()) {
-        return colour * evaluate_position(gs);
+        int eval = colour * evaluate_material(gs);
+        return eval;
     }
 
-    int max_value = INT_MIN;
+    int max_value = -INF;
     for (const Move& m : move_list) {
         Undo u = gs.make_move(m);
-        const int value = -negamax(gs, depth - 1, -colour, -beta, -alpha);
+        int value = -negamax(gs, depth - 1, -colour, -beta, -alpha);
         gs.undo_move(m, u);
 
         max_value = std::max(max_value, value);
         alpha = std::max(alpha, value);
-        if (alpha >= beta){
+        if (alpha >= beta) {
+            ++g_prunes;
             break;
         }
     }

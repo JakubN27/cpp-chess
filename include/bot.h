@@ -6,8 +6,9 @@
 
 class GameState;
 
-Move choose_bot_move(GameState& gs, const std::vector<Move>& legal_moves);
-int evaluate_position(const GameState& gs);
+Move choose_bot_move(GameState& gs, std::vector<Move>& legal_moves);
+int evaluate_material(const GameState& gs);
 int negamax(GameState& gs, int depth, int colour, int alpha, int beta);
+void order_moves(GameState& gs, std::vector<Move>& moves);
 
 #endif
