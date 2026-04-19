@@ -12,6 +12,7 @@
 // global counters for logging
 int g_nodes_visited = 0;
 int g_prunes = 0;
+int g_tt_hits = 0;
 
 enum TTFlag : uint8_t{
     EXACT,
@@ -78,6 +79,7 @@ static int move_priority_score(const GameState& gs, const Move& m) {
 Move choose_bot_move(GameState& gs, std::vector<Move>& legal_moves) {
     g_nodes_visited = 0;
     g_prunes = 0;
+    g_tt_hits = 0;
     order_moves(gs, legal_moves);
     if (legal_moves.empty()) {
         throw std::runtime_error("No legal moves");
@@ -103,7 +105,8 @@ Move choose_bot_move(GameState& gs, std::vector<Move>& legal_moves) {
         }
         alpha = std::max(alpha, score);
     }
-    std::cout << "Nodes visited: " << g_nodes_visited << ", Prunes: " << g_prunes << std::endl;
+    std::cout << "Nodes visited: " << g_nodes_visited << ", Prunes: " << g_prunes
+              << ", TT hits: " << g_tt_hits << std::endl;
     // Print root move order and scores
     std::cout << "Root move order and scores (" << (gs.is_white_to_move() ? "White" : "Black") << " to move):\n";
     for (size_t i = 0; i < legal_moves.size(); ++i) {
@@ -138,6 +141,7 @@ bool check_transposition_table(const GameState& gs, int depth, int& alpha, int& 
 
     switch (entry.flag){
         case EXACT:
+            ++g_tt_hits;
             return true;
         case LOWER:
             alpha = std::max(alpha, entry.eval);
@@ -147,7 +151,12 @@ bool check_transposition_table(const GameState& gs, int depth, int& alpha, int& 
             break;
     }
 
-    return alpha >= beta;
+    if (alpha >= beta) {
+        ++g_tt_hits;
+        return true;
+    }
+
+    return false;
 }
 
 
@@ -187,7 +196,21 @@ int negamax(GameState& gs, int depth, int colour, int alpha, int beta) {
 
     gs.generate_legal_moves(move_list);
 
-    if (depth == 0 || move_list.empty()) {
+    // evaluate checkmates and stalemates at terminal nodes
+    if (move_list.empty()) {
+        const bool stalemate_white = gs.is_white_to_move();
+        const Position kp = stalemate_white ? gs.get_white_king_pos() : gs.get_black_king_pos();
+        const bool in_check = gs.is_in_check(kp.row, kp.col, stalemate_white);
+
+        if (in_check) {
+            // punish getting chekmated
+            return -100000 + (5 - depth); // prefer quicker checkmates
+        }
+        // Stalemate = draw
+        return 0;
+    }
+
+    if (depth == 0) {
         return colour * evaluate_material(gs);
     }
 
@@ -211,8 +234,6 @@ int negamax(GameState& gs, int depth, int colour, int alpha, int beta) {
         flag = UPPER;
     } else if (eval >= beta_entry) {
         flag = LOWER;
-    } else {
-        flag = EXACT;
     }
 
     TranspositionTable.insert_or_assign(gs.get_hash(), PositionInfo{depth, eval, flag});
