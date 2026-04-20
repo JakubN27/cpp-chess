@@ -54,3 +54,6 @@ __pycache__/
 # OS specific
 Thumbs.db
 .Thumbs.db
+
+
+.env

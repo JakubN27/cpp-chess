@@ -3,7 +3,7 @@
 # Compiler and flags
 CXX = g++
 CXXFLAGS = -fdiagnostics-color=always -g -I./include -std=c++20
-LDFLAGS = 
+LDFLAGS = -lcurl
 
 # SFML (GUI) flags
 SFML_PREFIX = $(shell brew --prefix sfml 2>/dev/null)
@@ -19,11 +19,11 @@ BUILD_DIR = build
 BIN_DIR = bin
 
 # Source files
-SOURCES = $(SRC_DIR)/main.cpp $(SRC_DIR)/gamestate.cpp $(SRC_DIR)/board.cpp $(SRC_DIR)/piece.cpp $(SRC_DIR)/bot.cpp $(SRC_DIR)/cli.cpp $(SRC_DIR)/algebraic.cpp $(TEST_DIR)/test.cpp
+SOURCES = $(SRC_DIR)/main.cpp $(SRC_DIR)/gamestate.cpp $(SRC_DIR)/board.cpp $(SRC_DIR)/piece.cpp $(SRC_DIR)/bot.cpp $(SRC_DIR)/cli.cpp $(SRC_DIR)/algebraic.cpp $(SRC_DIR)/lichess.cpp $(TEST_DIR)/test.cpp
 OBJECTS = $(SOURCES:%.cpp=$(BUILD_DIR)/%.o)
 
 # GUI source files
-GUI_SOURCES = $(SRC_DIR)/gui_main.cpp $(SRC_DIR)/gamestate.cpp $(SRC_DIR)/board.cpp $(SRC_DIR)/piece.cpp $(SRC_DIR)/bot.cpp $(SRC_DIR)/cli.cpp $(SRC_DIR)/algebraic.cpp
+GUI_SOURCES = $(SRC_DIR)/gui_main.cpp $(SRC_DIR)/gamestate.cpp $(SRC_DIR)/board.cpp $(SRC_DIR)/piece.cpp $(SRC_DIR)/bot.cpp $(SRC_DIR)/cli.cpp $(SRC_DIR)/algebraic.cpp $(SRC_DIR)/lichess.cpp
 GUI_OBJECTS = $(GUI_SOURCES:%.cpp=$(BUILD_DIR)/%.o)
 GUI_TARGET = $(BIN_DIR)/gui
 

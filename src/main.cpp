@@ -3,6 +3,7 @@
 #include "../include/cli.h"
 #include "../include/algebraic.h"
 #include "../include/piece.h"
+#include "../include/lichess.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -43,6 +44,18 @@ static std::string result_text(GameState& gs){
 int main(int argc, char** argv) {
     BotConfig cfg = parse_bot_config(argc, argv);
 
+    if (cfg.lichess) {
+        const char* token = std::getenv("LICHESS_API_KEY");
+        if (!token || std::string(token).empty()) {
+            std::cerr << "LICHESS_API_KEY not set in environment.\n";
+            std::cerr << "Tip: export LICHESS_API_KEY=... before running, or use a tool to load .env.\n";
+            return 1;
+        }
+        LichessConfig lc;
+        lc.api_key = token;
+        return run_lichess_bot(lc);
+    }
+
     GameState gs;
     std::vector<Move> legal_moves;
 
@@ -61,7 +74,7 @@ int main(int argc, char** argv) {
             break;
         }
         
-        int eval = evaluate_material(gs);
+        int eval = evaluate_position(gs);
         std::cout << "Bot evluation : " << eval;
         print_board_ascii(gs);
 

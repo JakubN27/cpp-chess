@@ -16,6 +16,8 @@ BotConfig parse_bot_config(int argc, char** argv) {
         } else if (a == "--no-bot" || a == "--nobot") {
             cfg.white_bot = false;
             cfg.black_bot = false;
+        } else if (a == "--lichess") {
+            cfg.lichess = true;
         }
     }
 
