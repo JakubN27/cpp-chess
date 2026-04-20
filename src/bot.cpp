@@ -2,6 +2,7 @@
 #include "../include/gamestate.h"
 #include "../include/algebraic.h"
 #include "../include/piece.h"
+#include "../include/piece_square_tables.h"
 #include <stdexcept>
 #include <array>
 #include <unordered_map>
@@ -80,6 +81,7 @@ Move choose_bot_move(GameState& gs, std::vector<Move>& legal_moves) {
     g_nodes_visited = 0;
     g_prunes = 0;
     g_tt_hits = 0;
+
     order_moves(gs, legal_moves);
     if (legal_moves.empty()) {
         throw std::runtime_error("No legal moves");
@@ -90,13 +92,17 @@ Move choose_bot_move(GameState& gs, std::vector<Move>& legal_moves) {
     Move best_move = legal_moves.front();
     int best_score = -INF;
     int alpha = -INF;
+    int beta = INF;
+
     std::vector<int> root_scores;
     root_scores.reserve(legal_moves.size());
 
+    // Always search each root move with a proper window; alpha is updated after scoring.
     for (const Move& m : legal_moves) {
         Undo u = gs.make_move(m);
-        const int score = -negamax(gs, 5, -root_colour, -INF, -alpha);
+        const int score = -negamax(gs, 5, -root_colour, -beta, -alpha);
         gs.undo_move(m, u);
+
         root_scores.push_back(score);
 
         if (score > best_score) {
@@ -105,15 +111,16 @@ Move choose_bot_move(GameState& gs, std::vector<Move>& legal_moves) {
         }
         alpha = std::max(alpha, score);
     }
+
     std::cout << "Nodes visited: " << g_nodes_visited << ", Prunes: " << g_prunes
               << ", TT hits: " << g_tt_hits << std::endl;
-    // Print root move order and scores
+
     std::cout << "Root move order and scores (" << (gs.is_white_to_move() ? "White" : "Black") << " to move):\n";
     for (size_t i = 0; i < legal_moves.size(); ++i) {
-        const Move& m = legal_moves[i];
-        std::string san = move_to_san(gs, m);
+        std::string san = move_to_san(gs, legal_moves[i]);
         std::cout << "  " << san << " | Score: " << root_scores[i] << std::endl;
     }
+
     return best_move;
 }
 
@@ -159,7 +166,66 @@ bool check_transposition_table(const GameState& gs, int depth, int& alpha, int& 
     return false;
 }
 
+int evaluate_heuristics(const GameState& gs) {
+    int score = 0;
+    const Board& b = gs.get_board();
 
+    for (int row = 0; row < 8; ++row) {
+        for (int col = 0; col < 8; ++col) {
+            const Piece p = b[row][col];
+            switch (p) {
+                case WHITEPAWN:
+                    score += pst_at(kPawnPST, row, col, true);
+                    break;
+                case BLACKPAWN:
+                    score -= pst_at(kPawnPST, row, col, false);
+                    break;
+
+                case WHITEKNIGHT:
+                    score += pst_at(kKnightPST, row, col, true);
+                    break;
+                case BLACKKNIGHT:
+                    score -= pst_at(kKnightPST, row, col, false);
+                    break;
+
+                case WHITEBISHOP:
+                    score += pst_at(kBishopPST, row, col, true);
+                    break;
+                case BLACKBISHOP:
+                    score -= pst_at(kBishopPST, row, col, false);
+                    break;
+
+                case WHITEROOK:
+                    score += pst_at(kRookPST, row, col, true);
+                    break;
+                case BLACKROOK:
+                    score -= pst_at(kRookPST, row, col, false);
+                    break;
+
+                case WHITEQUEEN:
+                    score += pst_at(kQueenPST, row, col, true);
+                    break;
+                case BLACKQUEEN:
+                    score -= pst_at(kQueenPST, row, col, false);
+                    break;
+
+                case WHITEKING:
+                    // For now use middlegame table. Later blend MG/EG with a phase value.
+                    score += pst_at(kKingPSTMiddlegame, row, col, true);
+                    break;
+                case BLACKKING:
+                    score -= pst_at(kKingPSTMiddlegame, row, col, false);
+                    break;
+
+                case EMPTY:
+                default:
+                    break;
+            }
+        }
+    }
+
+    return score;
+}
 
 
 int evaluate_material(const GameState& gs) {
@@ -172,6 +238,10 @@ int evaluate_material(const GameState& gs) {
         }
     }
     return score;
+}
+
+int evaluate_position(const GameState& gs) {
+    return evaluate_heuristics(gs) + evaluate_material(gs);
 }
 
 //negamax returns an int, but we will decide which move to make 
@@ -211,7 +281,7 @@ int negamax(GameState& gs, int depth, int colour, int alpha, int beta) {
     }
 
     if (depth == 0) {
-        return colour * evaluate_material(gs);
+        return colour * evaluate_position(gs);
     }
 
     order_moves(gs, move_list);
