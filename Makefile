@@ -44,7 +44,7 @@ gui: $(GUI_TARGET)
 
 $(GUI_TARGET): $(GUI_OBJECTS)
 	@mkdir -p $(BIN_DIR)
-	$(CXX) $(CXXFLAGS) $(SFML_CPPFLAGS) $(GUI_OBJECTS) $(SFML_LDFLAGS) $(SFML_LIBS) -o $(GUI_TARGET)
+	$(CXX) $(CXXFLAGS) $(SFML_CPPFLAGS) $(GUI_OBJECTS) $(SFML_LDFLAGS) $(SFML_LIBS) $(LDFLAGS) -o $(GUI_TARGET)
 	@echo "Build complete! Executable: $(GUI_TARGET)"
 
 # Create executable

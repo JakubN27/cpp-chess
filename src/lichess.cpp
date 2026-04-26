@@ -5,13 +5,13 @@
 
 #include <curl/curl.h>
 
-#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -19,13 +19,6 @@
 #include <vector>
 
 namespace {
-
-size_t write_to_string(void* contents, size_t size, size_t nmemb, void* userp) {
-    size_t total = size * nmemb;
-    auto* s = static_cast<std::string*>(userp);
-    s->append(static_cast<const char*>(contents), total);
-    return total;
-}
 
 struct CurlHandle {
     CURL* h = nullptr;
@@ -50,6 +43,13 @@ struct HttpResponse {
     long status = 0;
     std::string body;
 };
+
+size_t write_to_string(void* contents, size_t size, size_t nmemb, void* userp) {
+    size_t total = size * nmemb;
+    auto* s = static_cast<std::string*>(userp);
+    s->append(static_cast<const char*>(contents), total);
+    return total;
+}
 
 HttpResponse http_post(const LichessConfig& cfg, const std::string& path, const std::string& body, const std::string& content_type) {
     CurlHandle curl;
@@ -109,49 +109,73 @@ HttpResponse http_get(const LichessConfig& cfg, const std::string& path) {
     return HttpResponse{status, response};
 }
 
-// Very small NDJSON split: each line is a JSON object.
-std::vector<std::string> split_lines(const std::string& s) {
-    std::vector<std::string> out;
-    std::string cur;
-    std::istringstream iss(s);
-    while (std::getline(iss, cur)) {
-        if (!cur.empty()) out.push_back(cur);
-    }
-    return out;
-}
-
-// Extract a simple string field value from a flat-ish JSON object.
-// This is NOT a general JSON parser; it is intentionally minimal.
+// Minimal JSON helpers (not a full parser)
+// NOTE: these helpers are intentionally limited; they assume `"key":"value"` appears
+// in the same object and is not ambiguous.
 std::optional<std::string> json_get_string(const std::string& json, const std::string& key) {
     const std::string needle = "\"" + key + "\":";
-    auto pos = json.find(needle);
-    if (pos == std::string::npos) return std::nullopt;
-    pos += needle.size();
-    while (pos < json.size() && (json[pos] == ' ')) ++pos;
-    if (pos >= json.size() || json[pos] != '\"') return std::nullopt;
-    ++pos;
-    std::string value;
-    while (pos < json.size() && json[pos] != '\"') {
-        // handle basic escapes
-        if (json[pos] == '\\' && pos + 1 < json.size()) {
-            value.push_back(json[pos + 1]);
-            pos += 2;
+    size_t search_from = 0;
+
+    while (true) {
+        auto pos = json.find(needle, search_from);
+        if (pos == std::string::npos) return std::nullopt;
+
+        pos += needle.size();
+        while (pos < json.size() && (json[pos] == ' ')) ++pos;
+
+        // only return string-valued keys; skip numeric/object values with same key name
+        if (pos >= json.size() || json[pos] != '\"') {
+            search_from = pos;
             continue;
         }
-        value.push_back(json[pos++]);
+
+        ++pos;
+        std::string value;
+        while (pos < json.size() && json[pos] != '\"') {
+            if (json[pos] == '\\' && pos + 1 < json.size()) {
+                value.push_back(json[pos + 1]);
+                pos += 2;
+                continue;
+            }
+            value.push_back(json[pos++]);
+        }
+        return value;
     }
-    return value;
 }
 
-// Extract moves from a field like "moves":"e2e4 e7e5 ..."
+static bool json_type_equals(const std::string& json, const std::string& typeValue) {
+    auto t = json_get_string(json, "type");
+    return t && *t == typeValue;
+}
+
+static bool json_side_has_identity(const std::string& json, const std::string& side, const std::string& username, const std::string& user_id) {
+    // Extremely small helper for patterns like: "white":{..."name":"x","id":"x"...}
+    const std::string k = "\"" + side + "\":";
+    auto kpos = json.find(k);
+    if (kpos == std::string::npos) return false;
+
+    bool by_name = json.find("\"name\":\"" + username + "\"", kpos) != std::string::npos;
+    bool by_id = !user_id.empty() && (json.find("\"id\":\"" + user_id + "\"", kpos) != std::string::npos);
+    return by_name || by_id;
+}
+
 std::string json_get_moves_field(const std::string& json) {
     auto v = json_get_string(json, "moves");
     return v.value_or("");
 }
 
-bool json_has_type(const std::string& json, const std::string& typeValue) {
-    auto t = json_get_string(json, "type");
-    return t && *t == typeValue;
+bool account_is_bot(const std::string& json) {
+    return json.find("\"title\":\"BOT\"") != std::string::npos;
+}
+
+bool is_game_stream_update(const std::string& json) {
+    if (json_type_equals(json, "gameState") || json_type_equals(json, "gameFull")) {
+        return true;
+    }
+
+    // Lichess can send the initial full game object without a "type" field.
+    // It still contains nested "state" / "moves" data we need in order to move as White.
+    return json.find("\"state\":") != std::string::npos || json.find("\"moves\":") != std::string::npos;
 }
 
 std::vector<std::string> split_space(const std::string& s) {
@@ -162,29 +186,124 @@ std::vector<std::string> split_space(const std::string& s) {
     return out;
 }
 
-Move uci_to_move(const std::string& uci) {
-    // uci: e2e4 or e7e8q
-    auto file_to_col = [](char f) { return int(f - 'a'); };
-    auto rank_to_row = [](char r) { return int('8' - r); };
-
-    Move m{};
-    m.start_col = file_to_col(uci[0]);
-    m.start_row = rank_to_row(uci[1]);
-    m.end_col = file_to_col(uci[2]);
-    m.end_row = rank_to_row(uci[3]);
-    if (uci.size() >= 5) {
-        m.flags |= MOVE_PROMOTION;
-        char pc = uci[4];
-        // map promotion piece by color later in make_move; here set White by default and fix in legality if needed
-        switch (pc) {
-            case 'q': m.promotion = WHITEQUEEN; break;
-            case 'r': m.promotion = WHITEROOK; break;
-            case 'b': m.promotion = WHITEBISHOP; break;
-            case 'n': m.promotion = WHITEKNIGHT; break;
-            default: break;
+bool apply_uci_legal_move(GameState& gs, const std::string& uci) {
+    std::vector<Move> legal;
+    gs.generate_legal_moves(legal);
+    for (const Move& m : legal) {
+        if (move_to_uci(m) == uci) {
+            gs.make_move(m);
+            return true;
         }
     }
-    return m;
+    return false;
+}
+
+struct NdjsonStreamContext {
+    std::string buffer;
+    std::function<void(const std::string&)> on_line;
+};
+
+bool looks_like_complete_json_object(const std::string& s) {
+    if (s.empty()) return false;
+
+    int depth = 0;
+    bool in_string = false;
+    bool escape = false;
+
+    for (char ch : s) {
+        if (in_string) {
+            if (escape) {
+                escape = false;
+                continue;
+            }
+            if (ch == '\\') {
+                escape = true;
+                continue;
+            }
+            if (ch == '\"') {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if (ch == '\"') {
+            in_string = true;
+            continue;
+        }
+        if (ch == '{') {
+            ++depth;
+        } else if (ch == '}') {
+            --depth;
+            if (depth < 0) return false;
+        }
+    }
+
+    return !in_string && !escape && depth == 0;
+}
+
+size_t ndjson_write_cb(void* contents, size_t size, size_t nmemb, void* userp) {
+    size_t total = size * nmemb;
+    auto* ctx = static_cast<NdjsonStreamContext*>(userp);
+    ctx->buffer.append(static_cast<const char*>(contents), total);
+
+    // process full lines
+    size_t start = 0;
+    while (true) {
+        size_t nl = ctx->buffer.find('\n', start);
+        if (nl == std::string::npos) break;
+        std::string line = ctx->buffer.substr(start, nl - start);
+        if (!line.empty()) ctx->on_line(line);
+        start = nl + 1;
+    }
+    if (start > 0) {
+        ctx->buffer.erase(0, start);
+    }
+
+    // Some streams/chunks can arrive as plain JSON objects without a trailing newline.
+    // Handle those so we do not stall waiting forever for '\n'.
+    if (!ctx->buffer.empty() && looks_like_complete_json_object(ctx->buffer)) {
+        std::string line = ctx->buffer;
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        ctx->buffer.clear();
+        if (!line.empty()) ctx->on_line(line);
+    }
+
+    return total;
+}
+
+// Blocking ndjson stream. Returns when curl call ends (disconnect/error). Caller should reconnect.
+void stream_ndjson(const LichessConfig& cfg, const std::string& path, const std::function<void(const std::string&)>& on_line) {
+    CurlHandle curl;
+    if (!curl.h) throw std::runtime_error("curl_easy_init failed");
+
+    std::string url = cfg.base_url + path;
+
+    CurlHeaders headers;
+    headers.list = curl_slist_append(headers.list, bearer_auth(cfg.api_key).c_str());
+
+    NdjsonStreamContext ctx;
+    ctx.on_line = on_line;
+
+    std::cerr << "Opening stream: " << path << "\n";
+
+    curl_easy_setopt(curl.h, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl.h, CURLOPT_HTTPHEADER, headers.list);
+    curl_easy_setopt(curl.h, CURLOPT_WRITEFUNCTION, ndjson_write_cb);
+    curl_easy_setopt(curl.h, CURLOPT_WRITEDATA, &ctx);
+    curl_easy_setopt(curl.h, CURLOPT_TCP_KEEPALIVE, 1L);
+
+    CURLcode res = curl_easy_perform(curl.h);
+    if (res != CURLE_OK) {
+        throw std::runtime_error(std::string("curl_easy_perform failed: ") + curl_easy_strerror(res));
+    }
+
+    long status = 0;
+    curl_easy_getinfo(curl.h, CURLINFO_RESPONSE_CODE, &status);
+    if (status != 200) {
+        throw std::runtime_error("stream request failed: HTTP " + std::to_string(status));
+    }
+
+    std::cerr << "Stream closed: " << path << "\n";
 }
 
 } // namespace
@@ -193,7 +312,8 @@ int run_lichess_bot(const LichessConfig& cfg) {
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
     std::cerr << "Connecting to Lichess as bot...\n";
-    // sanity check token
+    std::string my_username;
+    std::string my_user_id;
     {
         auto me = http_get(cfg, "/api/account");
         if (me.status != 200) {
@@ -201,100 +321,145 @@ int run_lichess_bot(const LichessConfig& cfg) {
             std::cerr << me.body << "\n";
             return 1;
         }
-        auto username = json_get_string(me.body, "username").value_or("?");
-        std::cerr << "Authenticated as: " << username << "\n";
+        my_username = json_get_string(me.body, "username").value_or("?");
+        my_user_id = json_get_string(me.body, "id").value_or("");
+        if (!account_is_bot(me.body)) {
+            std::cerr << "This account is not a Lichess Bot account.\n";
+            std::cerr << "Upgrade it first with /api/bot/account/upgrade before using --lichess.\n";
+            return 1;
+        }
+        std::cerr << "Authenticated as: " << my_username << "\n";
     }
 
-    std::cerr << "NOTE: This client is minimal. It can accept challenges and play moves, but JSON parsing is simplistic.\n";
+    std::cerr << "Listening for events...\n";
 
-    // Main loop: poll event stream by fetching in chunks.
-    // Proper implementation should stream /api/stream/event; here we poll for simplicity.
     while (true) {
         try {
-            auto events = http_get(cfg, "/api/stream/event");
-            if (events.status != 200) {
-                std::cerr << "Event stream failed: HTTP " << events.status << "\n";
-                std::this_thread::sleep_for(std::chrono::seconds(2));
-                continue;
-            }
-
-            for (const auto& line : split_lines(events.body)) {
-                if (json_has_type(line, "challenge")) {
+            // Stream events forever; reconnect on errors.
+            stream_ndjson(cfg, "/api/stream/event", [&](const std::string& line) {
+                if (json_type_equals(line, "challenge")) {
+                    // We accept all challenges for now.
                     auto id = json_get_string(line, "id");
-                    if (!id) continue;
-                    // accept all challenges
+                    if (!id) {
+                        std::cerr << "Challenge event without id: " << line << "\n";
+                        return;
+                    }
                     auto resp = http_post(cfg, "/api/challenge/" + *id + "/accept", "", "");
                     std::cerr << "Accepted challenge " << *id << " (HTTP " << resp.status << ")\n";
-                } else if (json_has_type(line, "gameStart")) {
-                    auto gameId = json_get_string(line, "id");
-                    if (!gameId) continue;
+                } else if (json_type_equals(line, "gameStart")) {
+                    auto gameId = json_get_string(line, "gameId");
+                    if (!gameId) {
+                        gameId = json_get_string(line, "id");
+                    }
+                    if (!gameId) {
+                        std::cerr << "gameStart without id: " << line << "\n";
+                        return;
+                    }
+
                     std::cerr << "Game started: " << *gameId << "\n";
 
-                    // stream game state (simplified polling)
-                    GameState gs;
-                    std::string last_moves;
-                    while (true) {
-                        auto st = http_get(cfg, "/api/bot/game/stream/" + *gameId);
-                        if (st.status != 200) {
-                            std::cerr << "Game stream failed: HTTP " << st.status << "\n";
-                            break;
-                        }
+                    std::optional<bool> event_color_is_white;
+                    auto event_color = json_get_string(line, "color");
+                    if (event_color) {
+                        if (*event_color == "white") event_color_is_white = true;
+                        if (*event_color == "black") event_color_is_white = false;
+                    }
 
-                        for (const auto& gline : split_lines(st.body)) {
-                            // gameFull contains initial state and "white"/"black" usernames.
-                            // gameState contains ongoing moves.
-                            if (json_has_type(gline, "gameState") || json_has_type(gline, "gameFull")) {
+                    // Stream game updates on a separate thread.
+                    std::thread([cfg, gameId, my_username, my_user_id, event_color_is_white]() {
+                        try {
+                            GameState gs;
+                            std::string last_moves;
+                            bool seen_position = false;
+                            bool awaiting_our_move = false;
+                            std::optional<bool> bot_is_white = event_color_is_white;
+
+                            std::cerr << "Starting game stream thread for " << *gameId << "\n";
+
+                            stream_ndjson(cfg, "/api/bot/game/stream/" + *gameId, [&](const std::string& gline) {
+                                if (!is_game_stream_update(gline)) {
+                                    return;
+                                }
+
+                                // Determine our color once from gameFull.
+                                if (!bot_is_white && (json_type_equals(gline, "gameFull") || gline.find("\"white\":") != std::string::npos)) {
+                                    bool white_match = json_side_has_identity(gline, "white", my_username, my_user_id);
+                                    bool black_match = json_side_has_identity(gline, "black", my_username, my_user_id);
+
+                                    if (white_match && !black_match) {
+                                        bot_is_white = true;
+                                    } else if (black_match && !white_match) {
+                                        bot_is_white = false;
+                                    }
+                                    if (bot_is_white) {
+                                        std::cerr << "Detected bot color: " << (*bot_is_white ? "white" : "black") << "\n";
+                                    } else {
+                                        std::cerr << "Warning: could not detect bot color from gameFull\n";
+                                    }
+                                }
+
                                 std::string movesField = json_get_moves_field(gline);
-                                if (movesField == last_moves) continue;
+                                if (seen_position && movesField == last_moves && !awaiting_our_move && bot_is_white) {
+                                    return;
+                                }
                                 last_moves = movesField;
+                                seen_position = true;
 
-                                // reconstruct position by replaying moves from start
+                                // Rebuild position by replaying all UCI moves from the start.
                                 gs = GameState();
                                 std::vector<std::string> uciMoves = split_space(movesField);
                                 for (const auto& uci : uciMoves) {
-                                    Move m = uci_to_move(uci);
-                                    // Promotion piece must have correct color
-                                    if ((m.flags & MOVE_PROMOTION) != 0) {
-                                        bool white = gs.is_white_to_move();
-                                        if (m.promotion == WHITEQUEEN || m.promotion == WHITEROOK || m.promotion == WHITEBISHOP || m.promotion == WHITEKNIGHT) {
-                                            // if black to move, shift to black enum equivalents
-                                            if (!white) {
-                                                if (m.promotion == WHITEQUEEN) m.promotion = BLACKQUEEN;
-                                                else if (m.promotion == WHITEROOK) m.promotion = BLACKROOK;
-                                                else if (m.promotion == WHITEBISHOP) m.promotion = BLACKBISHOP;
-                                                else if (m.promotion == WHITEKNIGHT) m.promotion = BLACKKNIGHT;
-                                            }
-                                        }
+                                    if (!apply_uci_legal_move(gs, uci)) {
+                                        std::cerr << "Failed to replay move " << uci
+                                                  << " in game " << *gameId << "\n";
+                                        return;
                                     }
-                                    gs.make_move(m);
                                 }
 
-                                // find legal moves and play if it's our turn.
-                                // We don't yet robustly detect our color; assume bot plays side-to-move for now.
+                                // Only play when it's our turn.
+                                if (!bot_is_white) {
+                                    awaiting_our_move = false;
+                                    return;
+                                }
+
+                                bool our_turn = (*bot_is_white == gs.is_white_to_move());
+                                if (!our_turn) {
+                                    awaiting_our_move = false;
+                                    return;
+                                }
+                                awaiting_our_move = true;
+
                                 std::vector<Move> legal;
                                 gs.generate_legal_moves(legal);
                                 if (legal.empty()) {
-                                    continue;
+                                    awaiting_our_move = false;
+                                    return;
                                 }
 
                                 Move bm = choose_bot_move(gs, legal);
                                 std::string uci = move_to_uci(bm);
+
                                 auto play = http_post(cfg, "/api/bot/game/" + *gameId + "/move/" + uci, "", "");
                                 std::cerr << "Played " << uci << " (HTTP " << play.status << ")\n";
-                            }
+                                if (play.status != 200 && !play.body.empty()) {
+                                    std::cerr << "Move response body: " << play.body << "\n";
+                                }
+                                if (play.status == 200) {
+                                    awaiting_our_move = false;
+                                }
+                            });
+                        } catch (const std::exception& e) {
+                            std::cerr << "Game stream error: " << e.what() << "\n";
                         }
-
-                        std::this_thread::sleep_for(std::chrono::milliseconds(250));
-                    }
+                    }).detach();
                 }
-            }
+            });
+
         } catch (const std::exception& e) {
-            std::cerr << "Lichess loop error: " << e.what() << "\n";
+            std::cerr << "Event stream error: " << e.what() << "\n";
             std::this_thread::sleep_for(std::chrono::seconds(2));
         }
     }
 
-    // unreachable
-    // curl_global_cleanup();
     return 0;
 }

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <mutex>
 
 // global counters for logging
 int g_nodes_visited = 0;
@@ -29,6 +30,7 @@ struct PositionInfo{
 };
 
 std::unordered_map<uint64_t, PositionInfo> TranspositionTable{};
+static std::mutex g_search_mutex;
 
 // material values indexed by `Piece` enum values (see `include/types.h`)
 static constexpr std::array<int, 13> kMaterial = {
@@ -78,6 +80,8 @@ static int move_priority_score(const GameState& gs, const Move& m) {
 }
 
 Move choose_bot_move(GameState& gs, std::vector<Move>& legal_moves) {
+    std::lock_guard<std::mutex> guard(g_search_mutex);
+
     g_nodes_visited = 0;
     g_prunes = 0;
     g_tt_hits = 0;
